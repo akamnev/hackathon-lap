@@ -5,3 +5,4 @@ pyg
 networkx
 tensorboard
 tqdm
+numpy

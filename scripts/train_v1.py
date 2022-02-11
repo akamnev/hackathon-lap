@@ -9,6 +9,7 @@ from torch_geometric.loader import DataLoader
 from hack_lap.models.gcn import GCNModel
 from hack_lap.utils.dataset import get_gcn_dataset
 from hack_lap.utils.train import kld_loss
+from hack_lap.utils.evaluate import evaluate
 
 DIR = os.path.split(os.path.abspath(__file__))
 DIR = os.path.split(DIR[0])[0]
@@ -16,37 +17,6 @@ DIR_MODULE = os.path.split(DIR)[0]
 DIR_DATA = os.path.join(DIR, 'data')
 DIR_LOG = os.path.join(DIR_DATA, 'log')
 DIR_MODEL = os.path.join(DIR_DATA, 'model')
-
-
-@torch.no_grad()
-def evaluate(model, loader, device, eps=1e-6):
-    fn_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
-    sigmoid = torch.nn.Sigmoid()
-    bce_loss = []
-    yt, yp = [], []
-    for batch in loader:
-        batch.to(device)
-        out = model(batch)
-        log_proba = out[0].view(-1)
-        loss = fn_loss(log_proba, batch.y)
-        bce_loss.append(loss)
-
-        proba = sigmoid(log_proba)
-        yp.append((proba > 0.5).to(torch.float32))
-        yt.append(batch.y.to(torch.float32))
-    bce_loss = torch.cat(bce_loss)
-    bce_loss = torch.mean(bce_loss)
-
-    yt = torch.cat(yt)
-    yp = torch.cat(yp)
-    tp = (yt * yp).sum()
-    # tn = ((1.0 - yt) * (1.0 - yp)).sum()
-    fp = ((1.0 - yt) * yp).sum()
-    fn = (yt * (1.0 - yp)).sum()
-    precision = tp / (tp + fp + eps)
-    recall = tp / (tp + fn + eps)
-    f1 = 2 * (precision * recall) / (precision + recall + eps)
-    return bce_loss, (precision, recall, f1)
 
 
 def main(
@@ -59,6 +29,7 @@ def main(
     lr=1e-4,
     wd=1e-1,
     weight_kld=1e-5,
+    weight_entropy=0.1,
     device='cpu',
     filename='train.pkl',
     seed=None,
@@ -73,8 +44,9 @@ def main(
     loader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True)
     loader_dev = DataLoader(dataset_dev, batch_size=batch_size)
 
+    # model name: Layer-N Hidden-N Pooling-type, Normalize bool bias bool
     cfg_model = {
-        'num_hidden_layers': 4,
+        'num_hidden_layers': 6,
         'hidden_size': 32,
         'intermediate_size': 128,
         'pooling': 'mean',
@@ -84,12 +56,14 @@ def main(
     model = GCNModel(**cfg_model)
     model.train()
     model.to(device)
+
     opt = torch.optim.AdamW(
         model.parameters(),
         lr=lr,
         weight_decay=wd
     )
     fn_loss = torch.nn.BCEWithLogitsLoss()
+    fn_proba = torch.nn.Sigmoid()
 
     cnt = 0
     for n_epoch in trange(num_epoch):
@@ -101,7 +75,11 @@ def main(
             loss_pred = fn_loss(log_proba, batch.y)
 
             kld = kld_loss(model, 'kld', {'nu': 0.0, 'rho': 1.0})
-            loss = loss_pred + weight_kld * kld
+            proba = fn_proba(log_proba)
+            entropy = torch.mean(proba * log_proba)
+            loss = loss_pred + weight_kld * kld + weight_entropy * entropy
+            loss_norm = [1.0 + weight_kld + weight_entropy]
+            loss = loss / sum(loss_norm)
             loss.backward()
 
             opt.step()
@@ -114,13 +92,13 @@ def main(
             cnt += 1
         loss_pos, (pr, re, f1) = evaluate(model, loader_dev, device)
         tb_writer.add_scalar(
-            f'{exp_name}/loss-eval', loss_pos.item(), n_epoch)
+            f'{exp_name}/loss-eval', loss_pos, n_epoch)
         tb_writer.add_scalar(
-            f'{exp_name}/precision', pr.item(), n_epoch)
+            f'{exp_name}/precision', pr, n_epoch)
         tb_writer.add_scalar(
-            f'{exp_name}/recall', re.item(), n_epoch)
+            f'{exp_name}/recall', re, n_epoch)
         tb_writer.add_scalar(
-            f'{exp_name}/f1', f1.item(), n_epoch)
+            f'{exp_name}/f1', f1, n_epoch)
 
     torch.save(
         model.state_dict(),
@@ -134,6 +112,7 @@ def main(
         'lr': lr,
         'wd': wd,
         'weight_kld': weight_kld,
+        'weight_entropy': weight_entropy,
         'seed': seed,
     }
     cfg.update(cfg_model)
