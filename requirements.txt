@@ -1,0 +1,7 @@
+pandas
+rdkit
+torch
+pyg
+networkx
+tensorboard
+tqdm
