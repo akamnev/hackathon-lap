@@ -32,38 +32,109 @@ def recall_both_curve(y_true, proba, eps=1e-8):
     return recall0, recall1, thresholds1
 
 
-def precision_recall(y_true, y_proba, cls_count_1=200, cls_count_2=5000):
+def precision_recall(y_true, y_proba, cls_count_0=5000, cls_count_1=200):
     recall0, recall1, thresholds = recall_both_curve(y_true, y_proba)
-    precision1 = recall1 * cls_count_1 / (recall1 * cls_count_1 + (1.0 - recall0) * cls_count_2)
-    return recall1, precision1, thresholds
+    precision1 = recall1 * cls_count_1 / (recall1 * cls_count_1 + (1.0 - recall0) * cls_count_0)
+    precision0 = recall0 * cls_count_0 / (recall0 * cls_count_0 + (1.0 - recall1) * cls_count_1)
+    return (recall0, precision0), (recall1, precision1), thresholds
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, eps=1e-6):
+def evaluate(model, loader, device, repeat=1):
+    assert isinstance(repeat, int) and repeat > 0
     fn_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
     sigmoid = torch.nn.Sigmoid()
     bce_loss = []
     yt, yp = [], []
     for batch in loader:
         batch.to(device)
-        out = model(batch)
-        log_proba = out[0].view(-1)
+        ypb = []
+        for _ in range(repeat):
+            out = model(batch)
+            log_proba = out[0].view(-1)
+            proba = sigmoid(log_proba).view(-1, 1)
+            ypb.append(proba)
         loss = fn_loss(log_proba, batch.y)
         bce_loss.append(loss)
 
-        proba = sigmoid(log_proba)
+        proba = torch.cat(ypb, dim=1)
         yp.append(proba)
         yt.append(batch.y.to(torch.float32))
     bce_loss = torch.cat(bce_loss)
-    bce_loss = torch.mean(bce_loss)
+    bce_loss = bce_loss.detach().cpu().numpy()
 
     yt = torch.cat(yt).detach().cpu().numpy()
     yp = torch.cat(yp).detach().cpu().numpy()
+    return bce_loss, yt, yp
 
-    recall, precision, thresholds = precision_recall(yt, yp)
-    f1 = 2 * (precision * recall) / (precision + recall + eps)
+
+@torch.no_grad()
+def evaluate_pred(model, loader, device, repeat=1):
+    assert isinstance(repeat, int) and repeat > 0
+    sigmoid = torch.nn.Sigmoid()
+    yp = []
+    for batch in loader:
+        batch.to(device)
+        ypb = []
+        for _ in range(repeat):
+            out = model(batch)
+            log_proba = out[0].view(-1)
+            proba = sigmoid(log_proba).view(-1, 1)
+            ypb.append(proba)
+        proba = torch.cat(ypb, dim=1)
+        yp.append(proba)
+    yp = torch.cat(yp).detach().cpu().numpy()
+    return yp
+
+
+def calculate_metrics(model, loader, device, repeat=1, eps=1e-6):
+    bce_loss, yt, yp = evaluate(model, loader, device, repeat)
+    bce_loss = np.mean(bce_loss)
+    yp = np.mean(yp, axis=1).ravel()
+    rp0, rp1, thresholds = precision_recall(yt, yp)
+    f1 = 2 * rp1[0] * rp1[1] / (rp1[0] + rp1[1] + eps)
     ii = np.argmax(f1)
     f1 = f1[ii]
-    recall = recall[ii]
-    precision = precision[ii]
-    return bce_loss, (precision, recall, f1)
+    recall_1 = rp1[0][ii]
+    precision_1 = rp1[1][ii]
+    recall_0 = rp0[0][ii]
+    precision_0 = rp0[1][ii]
+    thresholds = thresholds[ii]
+    return bce_loss, (precision_0, recall_0), (precision_1, recall_1, f1), \
+            thresholds
+
+
+def calculate_metrics_one_vs_rest(model, loader, device, repeat=1, eps=1e-6,
+                                  cls_count_0=5000, cls_count_1=200):
+    bce_loss, yt, yp = evaluate(model, loader, device, repeat)
+    bce_loss = np.mean(bce_loss)
+    yp = np.mean(yp, axis=1).ravel()
+    yt, yp = yt.tolist(), yp.tolist()
+    new_yt, new_yp = [], []
+    for i in range(len(yt)):
+        rp0, rp1, th = precision_recall(
+            np.array(yt[:i] + yt[i + 1:]),
+            np.array(yp[:i] + yp[i + 1:]),
+            cls_count_0=cls_count_0,
+            cls_count_1=cls_count_1
+        )
+        f1 = 2.0 * rp1[0] * rp1[1] / (rp1[0] + rp1[1] + 1e-5)
+        ii = np.argmax(f1)
+        new_yt.append(yt[i])
+        new_yp.append(int(yp[i] > th[ii]))
+    new_yt = np.array(new_yt)
+    new_yp = np.array(new_yp)
+
+    tp = (new_yp * new_yt).sum()
+    tn = ((1 - new_yp) * (1 - new_yt)).sum()
+    fp = (new_yp * (1 - new_yt)).sum()
+    fn = ((1 - new_yp) * new_yt).sum()
+
+    recall_1 = tp / (tp + fn)
+    recall_0 = tn / (tn + fp)
+    precision_1 = recall_1 * cls_count_1 / (recall_1 * cls_count_1 + (1.0 - recall_0) * cls_count_0)
+    precision_0 = recall_0 * cls_count_0 / (recall_0 * cls_count_0 + (1.0 - recall_1) * cls_count_1)
+    f1_1 = 2 * recall_1 * precision_1 / (recall_1 + precision_1 + eps)
+    f1_0 = 2 * recall_0 * precision_0 / (recall_0 + precision_0 + eps)
+
+    return bce_loss, (precision_0, recall_0, f1_0), (precision_1, recall_1, f1_1)
