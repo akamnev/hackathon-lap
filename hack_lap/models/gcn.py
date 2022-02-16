@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch_geometric.nn as gnn
-# from torch_geometric.nn import GCNConv, global_mean_pool
 from torch_sparse import SparseTensor
 from ..utils import BondType, ATOM2IDX
 from .dropout import VariationalNormalEpanechnikovDropout
@@ -232,6 +231,12 @@ class GCNModel(nn.Module):
         elif pooling == 'sort':
             self.pooling = gnn.global_sort_pool
             raise NotImplementedError
+        elif pooling == 'attention':
+            self._query = nn.Linear(hidden_size, 1, bias=False)
+            self._attention = gnn.GlobalAttention(
+                gate_nn=self._query
+            )
+            self.pooling = self.pooling_with_attention
         else:
             raise ValueError(pooling)
         self.head = HeadLogReg(hidden_size=hidden_size)
@@ -287,3 +292,5 @@ class GCNModel(nn.Module):
         output = (prop, vec, ) + output
         return output
 
+    def pooling_with_attention(self, hidden_states, batch, size=None):
+        return self._attention(hidden_states, batch, size)

@@ -6,14 +6,14 @@ do
   seed=$RANDOM
   echo $seed
   python train_v1.py \
-    --exp_name=mdl-L4-H32-Pmean-NF-BF \
+    --exp_name=mdl-L4-H32-Patt-NF-BF \
     --device="$device" \
     --batch_size=256 \
     --num_epoch=$num_epoch \
     --seed=$seed \
     --dev_reverse=0
   python train_v1.py \
-    --exp_name=mdl-L4-H32-Pmean-NF-BF \
+    --exp_name=mdl-L4-H32-Patt-NF-BF \
     --device="$device" \
     --batch_size=256 \
     --num_epoch=$num_epoch \
