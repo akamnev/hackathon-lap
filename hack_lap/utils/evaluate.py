@@ -104,6 +104,44 @@ def calculate_metrics(model, loader, device, repeat=1, eps=1e-6):
             thresholds
 
 
+def estimate_prediction(yt, yp, cls_count_0, cls_count_1):
+    yt, yp = yt.tolist(), yp.tolist()
+    new_yt, new_yp = [], []
+    for i in range(len(yt)):
+        rp0, rp1, th = precision_recall(
+            np.array(yt[:i] + yt[i + 1:]),
+            np.array(yp[:i] + yp[i + 1:]),
+            cls_count_0=cls_count_0,
+            cls_count_1=cls_count_1
+        )
+        f1 = 2.0 * rp1[0] * rp1[1] / (rp1[0] + rp1[1] + 1e-5)
+        ii = np.argmax(f1)
+        new_yt.append(yt[i])
+        new_yp.append(int(yp[i] > th[ii]))
+    new_yt = np.array(new_yt)
+    new_yp = np.array(new_yp)
+    return new_yt, new_yp
+
+
+def calculate_metrics_one_vs_rest_(yt, yp, eps=1e-6, cls_count_0=5000, cls_count_1=200):
+    yp = np.mean(yp, axis=1).ravel()
+    new_yt, new_yp = estimate_prediction(yt, yp, cls_count_0, cls_count_1)
+
+    tp = (new_yp * new_yt).sum()
+    tn = ((1 - new_yp) * (1 - new_yt)).sum()
+    fp = (new_yp * (1 - new_yt)).sum()
+    fn = ((1 - new_yp) * new_yt).sum()
+
+    recall_1 = tp / (tp + fn)
+    recall_0 = tn / (tn + fp)
+    precision_1 = recall_1 * cls_count_1 / (recall_1 * cls_count_1 + (1.0 - recall_0) * cls_count_0)
+    precision_0 = recall_0 * cls_count_0 / (recall_0 * cls_count_0 + (1.0 - recall_1) * cls_count_1)
+    f1_1 = 2 * recall_1 * precision_1 / (recall_1 + precision_1 + eps)
+    f1_0 = 2 * recall_0 * precision_0 / (recall_0 + precision_0 + eps)
+
+    return (precision_0, recall_0, f1_0), (precision_1, recall_1, f1_1)
+
+
 def calculate_metrics_one_vs_rest(model, loader, device, repeat=1, eps=1e-6,
                                   cls_count_0=5000, cls_count_1=200):
     bce_loss, yt, yp = evaluate(model, loader, device, repeat)
