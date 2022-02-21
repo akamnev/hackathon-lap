@@ -104,7 +104,7 @@ def calculate_metrics(model, loader, device, repeat=1, eps=1e-6):
             thresholds
 
 
-def estimate_prediction(yt, yp, cls_count_0, cls_count_1):
+def estimate_prediction(yt, yp, cls_count_0, cls_count_1, dump_factor=1.0):
     yt, yp = yt.tolist(), yp.tolist()
     new_yt, new_yp = [], []
     for i in range(len(yt)):
@@ -117,15 +117,15 @@ def estimate_prediction(yt, yp, cls_count_0, cls_count_1):
         f1 = 2.0 * rp1[0] * rp1[1] / (rp1[0] + rp1[1] + 1e-5)
         ii = np.argmax(f1)
         new_yt.append(yt[i])
-        new_yp.append(int(yp[i] > th[ii]))
+        new_yp.append(int(yp[i] > th[ii] * dump_factor))
     new_yt = np.array(new_yt)
     new_yp = np.array(new_yp)
     return new_yt, new_yp
 
 
-def calculate_metrics_one_vs_rest_(yt, yp, eps=1e-6, cls_count_0=5000, cls_count_1=200):
+def calculate_metrics_one_vs_rest_(yt, yp, eps=1e-6, cls_count_0=5000, cls_count_1=200, dump_factor=1.0):
     yp = np.mean(yp, axis=1).ravel()
-    new_yt, new_yp = estimate_prediction(yt, yp, cls_count_0, cls_count_1)
+    new_yt, new_yp = estimate_prediction(yt, yp, cls_count_0, cls_count_1, dump_factor)
 
     tp = (new_yp * new_yt).sum()
     tn = ((1 - new_yp) * (1 - new_yt)).sum()

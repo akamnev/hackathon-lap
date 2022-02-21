@@ -166,7 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', dest='lr', default=1e-4, type=float)
     parser.add_argument('--wd', dest='wd', default=1e-1, type=float)
     parser.add_argument('--weight_kld', dest='weight_kld', default=2e-6, type=float)
-    parser.add_argument('--weight_entropy', dest='weight_entropy', default=0.0, type=float)
+    parser.add_argument('--weight_entropy', dest='weight_entropy', default=0.1, type=float)
     parser.add_argument('--filename_train', dest='filename_train', default='train.pkl')
     parser.add_argument('--filename_test', dest='filename_test', default='test.pkl')
     parser.add_argument('--seed', dest='seed', default=None, type=int)
