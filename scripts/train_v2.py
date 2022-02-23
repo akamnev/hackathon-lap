@@ -1,4 +1,5 @@
-"""Continue to train model"""
+"""Script for analyzing the impact of reducing learning rate on the
+quality of the model."""
 import os
 import argparse
 import json

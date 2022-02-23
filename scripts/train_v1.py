@@ -1,4 +1,4 @@
-"""Обучение простой модели предсказания"""
+"""Script for training the ligand activity prediction model"""
 import os
 import argparse
 import json

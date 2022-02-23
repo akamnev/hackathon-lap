@@ -1,4 +1,4 @@
-"""Обучение простой модели предсказания"""
+"""Script for analyzing the impact of model initialization on its maximum quality"""
 import os
 import argparse
 import json
