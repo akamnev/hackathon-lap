@@ -13,12 +13,12 @@ We considered 4 types of bonds: single, double, triple, and aromatic.
 The model consists of an encoder which builds a vector representation of each atom,
 the pooling layer maps all vectors of atoms into one vector,
 the linear layer gives the logit activity probability of the molecule. 
-Encoder consists of L=4 layers, each of which includes layer norm at the begin,
-graph convolution and atom-wise feedforward layer. In graph convolution layer for
-each type of edge uses its own weight matrix.  
+Encoder consists of L=4 layers, each of which includes layer norm at the beginning,
+graph convolution and atom-wise feedforward layer. In graph convolution layer 
+for each type of edge its own weight matrix is used.
 
 Remarks:
-* two types of pooling layer were considered - mean pooling and attention pooling 
+* two types of pooling layers were considered: mean pooling and attention pooling 
 * We use [variational dropout](https://arxiv.org/abs/1705.07283)
 * Using variational dropout causes the model output to become a random value
 
@@ -40,7 +40,7 @@ Remarks: There is no check for duplicates, which can have a bad effect on the mo
 
 The imbalance active/non-active = 5351/206 was solved by duplicating positive examples 20 times.
 
-Train/dev split split algorithm:
+Train/dev split algorithm:
 1. Set the seed for the pseudo-random number algorithm.
 2. Shuffle the training data.
 3. Split positive and negative examples.
@@ -66,7 +66,7 @@ Model has L=4 encoder's layers, vector representation size is H=32.
 We use mean-pooling for the vector representation of the structure.
 In the process of model training, its quality is estimated on the dev set and, for further
 prediction, the best model is used. The model makes predictions for dev and test sets.
-We use the prediction on the dev set to find threshold.
+We use the prediction on the dev set to find a threshold.
 A molecule is considered active if more than half of the models consider it active. 
 
 ## Experiments
